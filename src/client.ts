@@ -249,7 +249,13 @@ export const CLIENT_HTML = `<!DOCTYPE html>
   const keyDir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
   let lastDir = { x: 0, y: 0 };
 
-  function updateInput() {
+  // face is true only when this update was triggered by pressing a new
+  // direction key. A key release still updates movement (dir), but must not
+  // re-aim the tank: releasing one of two diagonal keys — which almost
+  // always happens a moment before the other — would otherwise snap the
+  // facing to the remaining single axis, both mid-movement (breaking
+  // diagonal fire) and on a full stop (losing the diagonal facing).
+  function updateInput(face) {
     let x = 0, y = 0;
     if (pressed.has("ArrowLeft")) x -= 1;
     if (pressed.has("ArrowRight")) x += 1;
@@ -257,7 +263,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
     if (pressed.has("ArrowDown")) y += 1;
     if (x !== lastDir.x || y !== lastDir.y) {
       lastDir = { x, y };
-      send({ type: "input", dir: { x, y } });
+      send({ type: "input", dir: { x, y }, face });
     }
   }
 
@@ -265,7 +271,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
     if (gameScreen.style.display !== "flex") return;
     if (keyDir[e.key]) {
       pressed.add(e.key);
-      updateInput();
+      updateInput(true);
       e.preventDefault();
     } else if (e.key === " " && !e.repeat) {
       send({ type: "fire" });
@@ -275,7 +281,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
   window.addEventListener("keyup", (e) => {
     if (keyDir[e.key]) {
       pressed.delete(e.key);
-      updateInput();
+      updateInput(false);
     }
   });
 

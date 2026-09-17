@@ -85,7 +85,7 @@ export type ServerMessage =
 	| { type: "log"; text: string };
 
 export type ClientMessage =
-	| { type: "input"; dir: { x: -1 | 0 | 1; y: -1 | 0 | 1 } }
+	| { type: "input"; dir: { x: -1 | 0 | 1; y: -1 | 0 | 1 }; face: boolean }
 	| { type: "fire" }
 	| { type: "respawn" };
 

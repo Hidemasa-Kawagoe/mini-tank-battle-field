@@ -93,7 +93,12 @@ export class Battlefield extends DurableObject<Env> {
 			case "input": {
 				player.dirX = msg.dir.x;
 				player.dirY = msg.dir.y;
-				if (msg.dir.x !== 0 || msg.dir.y !== 0) {
+				// Only re-aim on a key press (a direction being added), never on a
+				// key release. Otherwise releasing one of two diagonal keys — which
+				// almost always happens a moment before the other — would snap
+				// facing to the remaining single axis, both mid-movement (breaking
+				// diagonal fire) and on a full stop (losing the diagonal facing).
+				if (msg.face && (msg.dir.x !== 0 || msg.dir.y !== 0)) {
 					player.facing = Math.atan2(msg.dir.y, msg.dir.x);
 				}
 				ws.serializeAttachment(player);
