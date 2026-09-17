@@ -13,13 +13,22 @@
 				"MyDurableObject"
 			],
 			"tag": "v1"
+		},
+		{
+			"deleted_classes": [
+				"MyDurableObject"
+			],
+			"new_sqlite_classes": [
+				"Battlefield"
+			],
+			"tag": "v2"
 		}
 	],
 	"durable_objects": {
 		"bindings": [
 			{
-				"class_name": "MyDurableObject",
-				"name": "MY_DURABLE_OBJECT"
+				"class_name": "Battlefield",
+				"name": "BATTLEFIELD"
 			}
 		]
 	},
