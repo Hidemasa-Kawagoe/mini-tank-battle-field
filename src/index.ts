@@ -10,6 +10,7 @@ import {
 	TANK_RADIUS,
 	PROJECTILE_RADIUS,
 	TICK_MS,
+	parseIdleTimeoutMs,
 	randomColor,
 	randomSpawn,
 	type ClientMessage,
@@ -66,6 +67,8 @@ export class Battlefield extends DurableObject<Env> {
 			score: 0,
 			alive: true,
 			joinedAt: Date.now(),
+			lastActivityAt: Date.now(),
+			idleKicked: false,
 		};
 		server.serializeAttachment(player);
 
@@ -88,6 +91,12 @@ export class Battlefield extends DurableObject<Env> {
 
 		const player = ws.deserializeAttachment() as PlayerAttachment | null;
 		if (!player) return;
+
+		// Any real client message counts as activity, resetting the idle
+		// timer. Persist it up front so it's not lost if a case below
+		// returns early (e.g. firing with no ammo) without its own save.
+		player.lastActivityAt = Date.now();
+		ws.serializeAttachment(player);
 
 		switch (msg.type) {
 			case "input": {
@@ -140,7 +149,9 @@ export class Battlefield extends DurableObject<Env> {
 
 	async webSocketClose(ws: WebSocket): Promise<void> {
 		const player = ws.deserializeAttachment() as PlayerAttachment | null;
-		if (player) this.broadcastLog(`${player.name} が退場しました`);
+		if (player) {
+			this.broadcastLog(player.idleKicked ? `${player.name} が無操作のため退場しました` : `${player.name} が退場しました`);
+		}
 		// The Hibernation API requires the Durable Object to close its own
 		// end explicitly, or the client's WebSocket never reaches CLOSED.
 		// The incoming code/reason may be a reserved value (e.g. 1005) that
@@ -162,7 +173,24 @@ export class Battlefield extends DurableObject<Env> {
 		const dt = Math.min((now - this.lastTick) / 1000, 0.5);
 		this.lastTick = now;
 
-		const sockets = this.ctx.getWebSockets();
+		// Kick anyone idle past the configured timeout before simulating this
+		// tick, so they're excluded from movement/collisions/the broadcast.
+		const idleTimeoutMs = parseIdleTimeoutMs(this.env.IDLE_TIMEOUT_SECONDS);
+		const sockets: WebSocket[] = [];
+		for (const ws of this.ctx.getWebSockets()) {
+			const player = ws.deserializeAttachment() as PlayerAttachment | null;
+			if (player && now - player.lastActivityAt >= idleTimeoutMs) {
+				player.idleKicked = true;
+				ws.serializeAttachment(player);
+				try {
+					ws.close(1000, "idle-timeout");
+				} catch {
+					// Already closed; nothing to do.
+				}
+				continue;
+			}
+			sockets.push(ws);
+		}
 
 		// Move tanks according to held-direction input.
 		for (const ws of sockets) {

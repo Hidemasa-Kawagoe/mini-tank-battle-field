@@ -20,6 +20,10 @@ export const INITIAL_AMMO = 10;
 
 export const TICK_MS = 50;
 
+// Default for the IDLE_TIMEOUT_SECONDS environment variable (wrangler.jsonc
+// "vars"), used when it's unset or not a valid positive number.
+export const DEFAULT_IDLE_TIMEOUT_SECONDS = 180;
+
 export const PLAYER_COLORS = [
 	"#e6194b",
 	"#3cb44b",
@@ -49,6 +53,8 @@ export interface PlayerAttachment {
 	score: number;
 	alive: boolean;
 	joinedAt: number;
+	lastActivityAt: number;
+	idleKicked: boolean;
 }
 
 export interface Projectile {
@@ -98,4 +104,14 @@ export function randomSpawn(): { x: number; y: number } {
 		x: TANK_RADIUS + Math.random() * (FIELD_WIDTH - TANK_RADIUS * 2),
 		y: TANK_RADIUS + Math.random() * (FIELD_HEIGHT - TANK_RADIUS * 2),
 	};
+}
+
+/** Parses the IDLE_TIMEOUT_SECONDS env var, falling back to the default for
+ * anything unset, non-numeric, or non-positive. */
+export function parseIdleTimeoutMs(value: string | undefined): number {
+	const seconds = Number(value);
+	if (!value || !Number.isFinite(seconds) || seconds <= 0) {
+		return DEFAULT_IDLE_TIMEOUT_SECONDS * 1000;
+	}
+	return seconds * 1000;
 }
