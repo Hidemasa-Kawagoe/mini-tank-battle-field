@@ -20,9 +20,14 @@ export const INITIAL_AMMO = 10;
 
 export const TICK_MS = 50;
 
-// Default for the IDLE_TIMEOUT_SECONDS environment variable (wrangler.jsonc
-// "vars"), used when it's unset or not a valid positive number.
+export const ITEM_RADIUS = 10;
+
+// Defaults for the environment variables (wrangler.jsonc "vars"), used
+// whenever the corresponding var is unset or not a valid positive number.
 export const DEFAULT_IDLE_TIMEOUT_SECONDS = 180;
+export const DEFAULT_ARMOR_RECOVER_AMOUNT = 5;
+export const DEFAULT_BULLET_RECOVER_AMOUNT = 5;
+export const DEFAULT_ITEM_SPAWN_INTERVAL_SECONDS = 60;
 
 export const PLAYER_COLORS = [
 	"#e6194b",
@@ -85,9 +90,17 @@ export interface StateProjectile {
 	color: string;
 }
 
+export type ItemType = "armor" | "bullet";
+
+export interface FieldItem {
+	type: ItemType;
+	x: number;
+	y: number;
+}
+
 export type ServerMessage =
 	| { type: "welcome"; id: string; color: string }
-	| { type: "state"; players: StatePlayer[]; projectiles: StateProjectile[] }
+	| { type: "state"; players: StatePlayer[]; projectiles: StateProjectile[]; items: FieldItem[] }
 	| { type: "log"; text: string };
 
 export type ClientMessage =
@@ -106,12 +119,14 @@ export function randomSpawn(): { x: number; y: number } {
 	};
 }
 
-/** Parses the IDLE_TIMEOUT_SECONDS env var, falling back to the default for
- * anything unset, non-numeric, or non-positive. */
+/** Parses a numeric env var, falling back to `defaultValue` for anything
+ * unset, non-numeric, or non-positive. */
+export function parsePositiveNumber(value: string | undefined, defaultValue: number): number {
+	const n = Number(value);
+	return value && Number.isFinite(n) && n > 0 ? n : defaultValue;
+}
+
+/** Parses the IDLE_TIMEOUT_SECONDS env var into milliseconds. */
 export function parseIdleTimeoutMs(value: string | undefined): number {
-	const seconds = Number(value);
-	if (!value || !Number.isFinite(seconds) || seconds <= 0) {
-		return DEFAULT_IDLE_TIMEOUT_SECONDS * 1000;
-	}
-	return seconds * 1000;
+	return parsePositiveNumber(value, DEFAULT_IDLE_TIMEOUT_SECONDS) * 1000;
 }

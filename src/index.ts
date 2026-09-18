@@ -1,19 +1,26 @@
 import { DurableObject } from "cloudflare:workers";
 import { CLIENT_HTML } from "./client";
 import {
+	DEFAULT_ARMOR_RECOVER_AMOUNT,
+	DEFAULT_BULLET_RECOVER_AMOUNT,
+	DEFAULT_ITEM_SPAWN_INTERVAL_SECONDS,
 	FIELD_HEIGHT,
 	FIELD_WIDTH,
 	INITIAL_AMMO,
 	INITIAL_HP,
+	ITEM_RADIUS,
 	MOVE_SPEED_PX_PER_SEC,
 	PROJECTILE_SPEED_PX_PER_SEC,
 	TANK_RADIUS,
 	PROJECTILE_RADIUS,
 	TICK_MS,
 	parseIdleTimeoutMs,
+	parsePositiveNumber,
 	randomColor,
 	randomSpawn,
 	type ClientMessage,
+	type FieldItem,
+	type ItemType,
 	type PlayerAttachment,
 	type Projectile,
 	type ServerMessage,
@@ -32,7 +39,10 @@ import {
  */
 export class Battlefield extends DurableObject<Env> {
 	private projectiles: Projectile[] = [];
+	private items: FieldItem[] = [];
 	private lastTick = Date.now();
+	private nextArmorSpawnAt: number | null = null;
+	private nextBulletSpawnAt: number | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -192,6 +202,9 @@ export class Battlefield extends DurableObject<Env> {
 			sockets.push(ws);
 		}
 
+		this.maybeSpawnItem("armor", now);
+		this.maybeSpawnItem("bullet", now);
+
 		// Move tanks according to held-direction input.
 		for (const ws of sockets) {
 			const player = ws.deserializeAttachment() as PlayerAttachment | null;
@@ -208,6 +221,34 @@ export class Battlefield extends DurableObject<Env> {
 			player.y = clamp(player.y + dy * MOVE_SPEED_PX_PER_SEC * dt, TANK_RADIUS, FIELD_HEIGHT - TANK_RADIUS);
 			ws.serializeAttachment(player);
 		}
+
+		// Item pickup: an alive tank standing close enough to an item
+		// collects it, restoring durability/ammo up to that stat's max.
+		this.items = this.items.filter((item) => {
+			for (const ws of sockets) {
+				const player = ws.deserializeAttachment() as PlayerAttachment | null;
+				if (!player || !player.alive) continue;
+
+				const dx = player.x - item.x;
+				const dy = player.y - item.y;
+				if (Math.sqrt(dx * dx + dy * dy) > TANK_RADIUS + ITEM_RADIUS) continue;
+
+				if (item.type === "armor") {
+					const amount = parsePositiveNumber(this.env.ARMOR_RECOVER_AMOUNT, DEFAULT_ARMOR_RECOVER_AMOUNT);
+					const before = player.hp;
+					player.hp = Math.min(INITIAL_HP, player.hp + amount);
+					this.send(ws, { type: "log", text: `耐久値を${player.hp - before}回復した（Armor）` });
+				} else {
+					const amount = parsePositiveNumber(this.env.BULLET_RECOVER_AMOUNT, DEFAULT_BULLET_RECOVER_AMOUNT);
+					const before = player.ammo;
+					player.ammo = Math.min(INITIAL_AMMO, player.ammo + amount);
+					this.send(ws, { type: "log", text: `残弾数を${player.ammo - before}回復した（Bullet）` });
+				}
+				ws.serializeAttachment(player);
+				return false;
+			}
+			return true;
+		});
 
 		// Move projectiles and drop ones that left the field.
 		this.projectiles = this.projectiles.filter((p) => {
@@ -274,12 +315,41 @@ export class Battlefield extends DurableObject<Env> {
 			type: "state",
 			players,
 			projectiles: this.projectiles.map((p) => ({ x: p.x, y: p.y, color: p.ownerColor })),
+			items: this.items,
 		};
 		for (const ws of sockets) this.send(ws, state);
 
 		if (sockets.length > 0 || this.projectiles.length > 0) {
 			await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
 		}
+	}
+
+	// Every ARMOR_SPAWN_INTERVAL_SECONDS / BULLET_SPAWN_INTERVAL_SECONDS,
+	// spawn one item of that type at a random field position — but only if
+	// one isn't already out there. The schedule advances on a fixed cadence
+	// regardless of whether a spawn actually happened, so a type that's
+	// stuck occupied is simply re-checked next interval, not spawned in a
+	// burst the moment it's freed up.
+	private maybeSpawnItem(type: ItemType, now: number): void {
+		const intervalMs =
+			parsePositiveNumber(
+				type === "armor" ? this.env.ARMOR_SPAWN_INTERVAL_SECONDS : this.env.BULLET_SPAWN_INTERVAL_SECONDS,
+				DEFAULT_ITEM_SPAWN_INTERVAL_SECONDS,
+			) * 1000;
+
+		let nextAt = type === "armor" ? this.nextArmorSpawnAt : this.nextBulletSpawnAt;
+		if (nextAt === null) {
+			nextAt = now + intervalMs;
+		} else if (now >= nextAt) {
+			if (!this.items.some((item) => item.type === type)) {
+				const spawn = randomSpawn();
+				this.items.push({ type, x: spawn.x, y: spawn.y });
+			}
+			nextAt = now + intervalMs;
+		}
+
+		if (type === "armor") this.nextArmorSpawnAt = nextAt;
+		else this.nextBulletSpawnAt = nextAt;
 	}
 
 	private async ensureTicking(): Promise<void> {

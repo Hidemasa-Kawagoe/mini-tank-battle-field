@@ -156,6 +156,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
 (function () {
   const TANK_RADIUS = 14;
   const PROJECTILE_RADIUS = 4;
+  const ITEM_RADIUS = 10;
 
   const loginScreen = document.getElementById("login-screen");
   const gameScreen = document.getElementById("game-screen");
@@ -174,7 +175,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
 
   let ws = null;
   let selfId = null;
-  let latestState = { players: [], projectiles: [] };
+  let latestState = { players: [], projectiles: [], items: [] };
   const pressed = new Set();
 
   function connect(name) {
@@ -296,6 +297,27 @@ export const CLIENT_HTML = `<!DOCTYPE html>
     }
 
     ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+
+    for (const item of latestState.items || []) {
+      ctx2d.save();
+      const isArmor = item.type === "armor";
+      ctx2d.fillStyle = isArmor ? "#4caf50" : "#ffc107";
+      ctx2d.fillRect(item.x - ITEM_RADIUS, item.y - ITEM_RADIUS, ITEM_RADIUS * 2, ITEM_RADIUS * 2);
+      ctx2d.strokeStyle = "#111";
+      ctx2d.lineWidth = 1.5;
+      ctx2d.strokeRect(item.x - ITEM_RADIUS, item.y - ITEM_RADIUS, ITEM_RADIUS * 2, ITEM_RADIUS * 2);
+      ctx2d.fillStyle = "#111";
+      ctx2d.font = "bold 11px sans-serif";
+      ctx2d.textAlign = "center";
+      ctx2d.textBaseline = "middle";
+      ctx2d.fillText(isArmor ? "H" : "B", item.x, item.y + 1);
+      ctx2d.restore();
+
+      ctx2d.fillStyle = "#ddd";
+      ctx2d.font = "10px sans-serif";
+      ctx2d.textAlign = "center";
+      ctx2d.fillText(isArmor ? "Armor" : "Bullet", item.x, item.y - ITEM_RADIUS - 4);
+    }
 
     for (const p of latestState.projectiles) {
       ctx2d.beginPath();

@@ -39,11 +39,19 @@
 	/**
 	 * Environment Variables
 	 * IDLE_TIMEOUT_SECONDS: seconds of no client message (movement/fire/
-	 * respawn) before a player is automatically logged out. Change this to
-	 * adjust the idle timeout; it takes effect on the next deploy.
+	 * respawn) before a player is automatically logged out.
+	 * ARMOR_RECOVER_AMOUNT / BULLET_RECOVER_AMOUNT: how much durability /
+	 * ammo a picked-up item restores (capped at each stat's max).
+	 * ARMOR_SPAWN_INTERVAL_SECONDS / BULLET_SPAWN_INTERVAL_SECONDS: how
+	 * often each item type may appear on the field (skipped if one of that
+	 * type is already out there). Changes take effect on the next deploy.
 	 */
 	"vars": {
-		"IDLE_TIMEOUT_SECONDS": "180"
+		"IDLE_TIMEOUT_SECONDS": "180",
+		"ARMOR_RECOVER_AMOUNT": "5",
+		"BULLET_RECOVER_AMOUNT": "5",
+		"ARMOR_SPAWN_INTERVAL_SECONDS": "60",
+		"BULLET_SPAWN_INTERVAL_SECONDS": "60"
 	}
 	/**
 	 * Smart Placement
