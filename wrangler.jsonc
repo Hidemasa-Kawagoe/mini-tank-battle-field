@@ -44,14 +44,20 @@
 	 * ammo a picked-up item restores (capped at each stat's max).
 	 * ARMOR_SPAWN_INTERVAL_SECONDS / BULLET_SPAWN_INTERVAL_SECONDS: how
 	 * often each item type may appear on the field (skipped if one of that
-	 * type is already out there). Changes take effect on the next deploy.
+	 * type is already out there).
+	 * NPC_MAX_COUNT: max NPC tanks on the field at once (0 disables NPCs).
+	 * NPC_SPAWN_INTERVAL_SECONDS: how often a new NPC appears (only while
+	 * at least one user is logged in) until NPC_MAX_COUNT is reached.
+	 * Changes take effect on the next deploy.
 	 */
 	"vars": {
 		"IDLE_TIMEOUT_SECONDS": "180",
 		"ARMOR_RECOVER_AMOUNT": "5",
 		"BULLET_RECOVER_AMOUNT": "5",
 		"ARMOR_SPAWN_INTERVAL_SECONDS": "60",
-		"BULLET_SPAWN_INTERVAL_SECONDS": "60"
+		"BULLET_SPAWN_INTERVAL_SECONDS": "60",
+		"NPC_MAX_COUNT": "5",
+		"NPC_SPAWN_INTERVAL_SECONDS": "3"
 	}
 	/**
 	 * Smart Placement

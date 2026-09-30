@@ -28,6 +28,25 @@ export const DEFAULT_IDLE_TIMEOUT_SECONDS = 180;
 export const DEFAULT_ARMOR_RECOVER_AMOUNT = 5;
 export const DEFAULT_BULLET_RECOVER_AMOUNT = 5;
 export const DEFAULT_ITEM_SPAWN_INTERVAL_SECONDS = 60;
+export const DEFAULT_NPC_MAX_COUNT = 5;
+export const DEFAULT_NPC_SPAWN_INTERVAL_SECONDS = 3;
+
+// NPC tank behavior tuning.
+export const NPC_COLOR = "#9e9e9e";
+export const NPC_THINK_MIN_MS = 500;
+export const NPC_THINK_MAX_MS = 1500;
+export const NPC_MOVE_TIMEOUT_MS = 30_000;
+// An NPC counts as having reached its destination when it's this close
+// (per axis); the same value is the per-axis dead zone while steering.
+export const NPC_ARRIVE_TOLERANCE_PX = 3;
+// "耐久値が低い" threshold below which an NPC heads for an Armor item.
+export const NPC_LOW_HP_THRESHOLD = 3;
+export const NPC_TURN_TOWARD_USER_CHANCE = 0.5;
+export const NPC_FIRE_CHANCE_ON_LINE = 0.5;
+export const NPC_FIRE_CHANCE_NEAR_LINE = 0.2;
+// Perpendicular distance from the line of fire within which a tank counts as
+// "around" it (a tank within TANK_RADIUS + PROJECTILE_RADIUS is "on" it).
+export const NPC_NEAR_LINE_WIDTH_PX = 60;
 
 export const PLAYER_COLORS = [
 	"#e6194b",
@@ -60,6 +79,13 @@ export interface PlayerAttachment {
 	joinedAt: number;
 	lastActivityAt: number;
 	idleKicked: boolean;
+}
+
+/** Autonomous-behavior state for an NPC tank. */
+export interface NpcAi {
+	target: { x: number; y: number; item: ItemType | null } | null;
+	moveDeadline: number;
+	nextThinkAt: number;
 }
 
 export interface Projectile {
@@ -124,6 +150,12 @@ export function randomSpawn(): { x: number; y: number } {
 export function parsePositiveNumber(value: string | undefined, defaultValue: number): number {
 	const n = Number(value);
 	return value && Number.isFinite(n) && n > 0 ? n : defaultValue;
+}
+
+/** Like parsePositiveNumber, but allows 0 and rounds down to an integer. */
+export function parseNonNegativeInt(value: string | undefined, defaultValue: number): number {
+	const n = Number(value);
+	return value && Number.isFinite(n) && n >= 0 ? Math.floor(n) : defaultValue;
 }
 
 /** Parses the IDLE_TIMEOUT_SECONDS env var into milliseconds. */
