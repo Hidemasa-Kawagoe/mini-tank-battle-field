@@ -8,7 +8,6 @@ import {
 	DEFAULT_NPC_SPAWN_INTERVAL_SECONDS,
 	FIELD_HEIGHT,
 	FIELD_WIDTH,
-	INITIAL_HP,
 	ITEM_RADIUS,
 	MAX_LEVEL,
 	MOVE_SPEED_PX_PER_SEC,
@@ -17,6 +16,7 @@ import {
 	NPC_FIRE_CHANCE_NEAR_LINE,
 	NPC_FIRE_CHANCE_ON_LINE,
 	NPC_INITIAL_AMMO,
+	NPC_INITIAL_HP,
 	NPC_LOW_HP_THRESHOLD,
 	NPC_MOVE_TIMEOUT_MS,
 	NPC_NEAR_LINE_WIDTH_PX,
@@ -24,6 +24,7 @@ import {
 	NPC_THINK_MIN_MS,
 	NPC_TURN_TOWARD_USER_CHANCE,
 	PLAYER_INITIAL_AMMO,
+	PLAYER_INITIAL_HP,
 	PROJECTILE_SPEED_PX_PER_SEC,
 	TANK_RADIUS,
 	TICK_MS,
@@ -106,7 +107,7 @@ export class Battlefield extends DurableObject<Env> {
 			dirX: 0,
 			dirY: 0,
 			facing: -Math.PI / 2,
-			hp: INITIAL_HP,
+			hp: PLAYER_INITIAL_HP,
 			ammo: PLAYER_INITIAL_AMMO,
 			score: 0,
 			level: 0,
@@ -167,7 +168,7 @@ export class Battlefield extends DurableObject<Env> {
 			case "respawn": {
 				if (player.hp > 0) break;
 				const spawn = randomSpawn();
-				player.hp = INITIAL_HP;
+				player.hp = PLAYER_INITIAL_HP;
 				player.ammo = PLAYER_INITIAL_AMMO;
 				player.alive = true;
 				player.level = 0;
@@ -268,7 +269,8 @@ export class Battlefield extends DurableObject<Env> {
 				if (item.type === "armor") {
 					const amount = parsePositiveNumber(this.env.ARMOR_RECOVER_AMOUNT, DEFAULT_ARMOR_RECOVER_AMOUNT);
 					const before = data.hp;
-					data.hp = Math.min(INITIAL_HP, data.hp + amount);
+					const maxHp = tank.ai ? NPC_INITIAL_HP : PLAYER_INITIAL_HP;
+					data.hp = Math.min(maxHp, data.hp + amount);
 					if (tank.ws) this.send(tank.ws, { type: "log", text: `耐久値を${data.hp - before}回復した（Armor）` });
 				} else {
 					const amount = parsePositiveNumber(this.env.BULLET_RECOVER_AMOUNT, DEFAULT_BULLET_RECOVER_AMOUNT);
@@ -433,7 +435,7 @@ export class Battlefield extends DurableObject<Env> {
 				dirX: 0,
 				dirY: 0,
 				facing: Math.floor(Math.random() * 8) * FACING_STEP,
-				hp: INITIAL_HP,
+				hp: NPC_INITIAL_HP,
 				ammo: NPC_INITIAL_AMMO,
 				score: 0,
 				level: 0,
