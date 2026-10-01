@@ -10,6 +10,21 @@ export const FIELD_HEIGHT = 600;
 export const TANK_RADIUS = 14;
 export const PROJECTILE_RADIUS = 4;
 
+// Tank levels: start at 0, +1 per kill, back to 0 when hit. Effects stack.
+export const MAX_LEVEL = 2;
+// Level 1+: projectiles are as large as a tank (easier to land).
+export const BIG_PROJECTILE_MIN_LEVEL = 1;
+// Level 2+: attack +1, so a hit costs the target 2 durability instead of 1.
+export const BONUS_DAMAGE_MIN_LEVEL = 2;
+
+export function projectileRadiusForLevel(level: number): number {
+	return level >= BIG_PROJECTILE_MIN_LEVEL ? TANK_RADIUS : PROJECTILE_RADIUS;
+}
+
+export function projectileDamageForLevel(level: number): number {
+	return level >= BONUS_DAMAGE_MIN_LEVEL ? 2 : 1;
+}
+
 // "移動速度: 固定値 毎秒2ユニット" — 1 unit = 20px, so 2 units/sec = 40px/sec.
 export const UNIT_PX = 20;
 export const MOVE_SPEED_PX_PER_SEC = UNIT_PX * 2;
@@ -47,7 +62,7 @@ export const NPC_TURN_TOWARD_USER_CHANCE = 0.5;
 export const NPC_FIRE_CHANCE_ON_LINE = 0.5;
 export const NPC_FIRE_CHANCE_NEAR_LINE = 0.2;
 // Perpendicular distance from the line of fire within which a tank counts as
-// "around" it (a tank within TANK_RADIUS + PROJECTILE_RADIUS is "on" it).
+// "around" it (a tank within the shooter's projectile hit width is "on" it).
 export const NPC_NEAR_LINE_WIDTH_PX = 60;
 
 export const PLAYER_COLORS = [
@@ -77,6 +92,7 @@ export interface PlayerAttachment {
 	hp: number;
 	ammo: number;
 	score: number;
+	level: number;
 	alive: boolean;
 	joinedAt: number;
 	lastActivityAt: number;
@@ -97,6 +113,9 @@ export interface Projectile {
 	y: number;
 	vx: number;
 	vy: number;
+	// Fixed at fire time from the shooter's level then.
+	radius: number;
+	damage: number;
 }
 
 export interface StatePlayer {
@@ -109,6 +128,7 @@ export interface StatePlayer {
 	hp: number;
 	ammo: number;
 	score: number;
+	level: number;
 	alive: boolean;
 }
 
@@ -116,6 +136,7 @@ export interface StateProjectile {
 	x: number;
 	y: number;
 	color: string;
+	radius: number;
 }
 
 export type ItemType = "armor" | "bullet";

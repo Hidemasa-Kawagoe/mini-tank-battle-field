@@ -141,6 +141,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       <div class="stat"><span class="label">耐久値</span><span class="value" id="stat-hp">-</span></div>
       <div class="stat"><span class="label">残弾数</span><span class="value" id="stat-ammo">-</span></div>
       <div class="stat"><span class="label">撃破数</span><span class="value" id="stat-score">-</span></div>
+      <div class="stat"><span class="label">レベル</span><span class="value" id="stat-level">-</span></div>
     </div>
     <div id="field-wrap">
       <canvas id="field" width="800" height="600"></canvas>
@@ -155,7 +156,6 @@ export const CLIENT_HTML = `<!DOCTYPE html>
 <script>
 (function () {
   const TANK_RADIUS = 14;
-  const PROJECTILE_RADIUS = 4;
   const ITEM_RADIUS = 10;
 
   const loginScreen = document.getElementById("login-screen");
@@ -169,6 +169,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
   const statHp = document.getElementById("stat-hp");
   const statAmmo = document.getElementById("stat-ammo");
   const statScore = document.getElementById("stat-score");
+  const statLevel = document.getElementById("stat-level");
   const logList = document.getElementById("log-list");
   const canvas = document.getElementById("field");
   const ctx2d = canvas.getContext("2d");
@@ -293,6 +294,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       statHp.textContent = self.hp;
       statAmmo.textContent = self.ammo;
       statScore.textContent = self.score;
+      statLevel.textContent = self.level;
       respawnButton.disabled = self.hp > 0;
     }
 
@@ -321,7 +323,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
 
     for (const p of latestState.projectiles) {
       ctx2d.beginPath();
-      ctx2d.arc(p.x, p.y, PROJECTILE_RADIUS, 0, Math.PI * 2);
+      ctx2d.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
       ctx2d.fillStyle = p.color;
       ctx2d.fill();
     }
@@ -349,7 +351,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       ctx2d.fillStyle = "#ddd";
       ctx2d.font = "11px sans-serif";
       ctx2d.textAlign = "center";
-      ctx2d.fillText(player.name, player.x, player.y - TANK_RADIUS - 6);
+      ctx2d.fillText(player.level > 0 ? player.name + " Lv" + player.level : player.name, player.x, player.y - TANK_RADIUS - 6);
     }
   }
 })();

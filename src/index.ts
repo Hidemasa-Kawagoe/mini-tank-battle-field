@@ -10,6 +10,7 @@ import {
 	FIELD_WIDTH,
 	INITIAL_HP,
 	ITEM_RADIUS,
+	MAX_LEVEL,
 	MOVE_SPEED_PX_PER_SEC,
 	NPC_ARRIVE_TOLERANCE_PX,
 	NPC_COLOR,
@@ -25,11 +26,12 @@ import {
 	PLAYER_INITIAL_AMMO,
 	PROJECTILE_SPEED_PX_PER_SEC,
 	TANK_RADIUS,
-	PROJECTILE_RADIUS,
 	TICK_MS,
 	parseIdleTimeoutMs,
 	parseNonNegativeInt,
 	parsePositiveNumber,
+	projectileDamageForLevel,
+	projectileRadiusForLevel,
 	randomColor,
 	randomSpawn,
 	type ClientMessage,
@@ -107,6 +109,7 @@ export class Battlefield extends DurableObject<Env> {
 			hp: INITIAL_HP,
 			ammo: PLAYER_INITIAL_AMMO,
 			score: 0,
+			level: 0,
 			alive: true,
 			joinedAt: Date.now(),
 			lastActivityAt: Date.now(),
@@ -167,6 +170,7 @@ export class Battlefield extends DurableObject<Env> {
 				player.hp = INITIAL_HP;
 				player.ammo = PLAYER_INITIAL_AMMO;
 				player.alive = true;
+				player.level = 0;
 				player.x = spawn.x;
 				player.y = spawn.y;
 				player.dirX = 0;
@@ -296,18 +300,31 @@ export class Battlefield extends DurableObject<Env> {
 				const dx = target.x - projectile.x;
 				const dy = target.y - projectile.y;
 				const distance = Math.sqrt(dx * dx + dy * dy);
-				if (distance > TANK_RADIUS + PROJECTILE_RADIUS) continue;
+				if (distance > TANK_RADIUS + projectile.radius) continue;
 
-				target.hp -= 1;
+				target.hp = Math.max(0, target.hp - projectile.damage);
 				const destroyed = target.hp <= 0;
 				if (destroyed) target.alive = false;
 
 				this.sendLogToTank(tanks, projectile.ownerId, `${target.name} に命中させた！${destroyed ? "（撃破）" : ""}`);
 				this.sendLogToTank(tanks, target.id, `${this.findTankName(tanks, projectile.ownerId)} の弾が命中した${destroyed ? "（被撃破）" : ""}`);
 
+				// Being hit at all drops the target back to level 0.
+				if (target.level > 0) {
+					target.level = 0;
+					this.sendLogToTank(tanks, target.id, "被弾によりレベルが0に戻った");
+				}
+
+				// Each kill is +1 score and +1 level (up to the max).
 				if (destroyed) {
 					const shooter = tanks.find((t) => t.data.id === projectile.ownerId);
-					if (shooter) shooter.data.score += 1;
+					if (shooter) {
+						shooter.data.score += 1;
+						if (shooter.data.level < MAX_LEVEL) {
+							shooter.data.level += 1;
+							this.sendLogToTank(tanks, shooter.data.id, `レベルアップ！ Lv${shooter.data.level}`);
+						}
+					}
 				}
 
 				hit = true;
@@ -339,13 +356,14 @@ export class Battlefield extends DurableObject<Env> {
 			hp: p.hp,
 			ammo: p.ammo,
 			score: p.score,
+			level: p.level,
 			alive: p.alive,
 		}));
 
 		const state: ServerMessage = {
 			type: "state",
 			players,
-			projectiles: this.projectiles.map((p) => ({ x: p.x, y: p.y, color: p.ownerColor })),
+			projectiles: this.projectiles.map((p) => ({ x: p.x, y: p.y, color: p.ownerColor, radius: p.radius })),
 			items: this.items,
 		};
 		for (const human of humans) if (human.ws) this.send(human.ws, state);
@@ -418,6 +436,7 @@ export class Battlefield extends DurableObject<Env> {
 				hp: INITIAL_HP,
 				ammo: NPC_INITIAL_AMMO,
 				score: 0,
+				level: 0,
 				alive: true,
 				joinedAt: now,
 				lastActivityAt: now,
@@ -529,6 +548,7 @@ export class Battlefield extends DurableObject<Env> {
 	private fireChance(data: PlayerAttachment, tanks: Tank[]): number {
 		const fx = Math.cos(data.facing);
 		const fy = Math.sin(data.facing);
+		const hitWidth = TANK_RADIUS + projectileRadiusForLevel(data.level);
 		let chance = 0;
 		for (const { data: other } of tanks) {
 			if (other.id === data.id || !other.alive) continue;
@@ -538,7 +558,7 @@ export class Battlefield extends DurableObject<Env> {
 			if (vx * fx + vy * fy <= 0) continue;
 
 			const offLine = Math.abs(vx * fy - vy * fx);
-			if (offLine <= TANK_RADIUS + PROJECTILE_RADIUS) return NPC_FIRE_CHANCE_ON_LINE;
+			if (offLine <= hitWidth) return NPC_FIRE_CHANCE_ON_LINE;
 			if (offLine <= NPC_NEAR_LINE_WIDTH_PX) chance = NPC_FIRE_CHANCE_NEAR_LINE;
 		}
 		return chance;
@@ -548,13 +568,16 @@ export class Battlefield extends DurableObject<Env> {
 		shooter.ammo -= 1;
 		const dirX = Math.cos(shooter.facing);
 		const dirY = Math.sin(shooter.facing);
+		const radius = projectileRadiusForLevel(shooter.level);
 		this.projectiles.push({
 			ownerId: shooter.id,
 			ownerColor: shooter.color,
-			x: shooter.x + dirX * (TANK_RADIUS + PROJECTILE_RADIUS + 2),
-			y: shooter.y + dirY * (TANK_RADIUS + PROJECTILE_RADIUS + 2),
+			x: shooter.x + dirX * (TANK_RADIUS + radius + 2),
+			y: shooter.y + dirY * (TANK_RADIUS + radius + 2),
 			vx: dirX * PROJECTILE_SPEED_PX_PER_SEC,
 			vy: dirY * PROJECTILE_SPEED_PX_PER_SEC,
+			radius,
+			damage: projectileDamageForLevel(shooter.level),
 		});
 	}
 
