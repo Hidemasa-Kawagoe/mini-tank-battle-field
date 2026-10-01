@@ -8,7 +8,6 @@ import {
 	DEFAULT_NPC_SPAWN_INTERVAL_SECONDS,
 	FIELD_HEIGHT,
 	FIELD_WIDTH,
-	INITIAL_AMMO,
 	INITIAL_HP,
 	ITEM_RADIUS,
 	MOVE_SPEED_PX_PER_SEC,
@@ -16,12 +15,14 @@ import {
 	NPC_COLOR,
 	NPC_FIRE_CHANCE_NEAR_LINE,
 	NPC_FIRE_CHANCE_ON_LINE,
+	NPC_INITIAL_AMMO,
 	NPC_LOW_HP_THRESHOLD,
 	NPC_MOVE_TIMEOUT_MS,
 	NPC_NEAR_LINE_WIDTH_PX,
 	NPC_THINK_MAX_MS,
 	NPC_THINK_MIN_MS,
 	NPC_TURN_TOWARD_USER_CHANCE,
+	PLAYER_INITIAL_AMMO,
 	PROJECTILE_SPEED_PX_PER_SEC,
 	TANK_RADIUS,
 	PROJECTILE_RADIUS,
@@ -104,7 +105,7 @@ export class Battlefield extends DurableObject<Env> {
 			dirY: 0,
 			facing: -Math.PI / 2,
 			hp: INITIAL_HP,
-			ammo: INITIAL_AMMO,
+			ammo: PLAYER_INITIAL_AMMO,
 			score: 0,
 			alive: true,
 			joinedAt: Date.now(),
@@ -164,7 +165,7 @@ export class Battlefield extends DurableObject<Env> {
 				if (player.hp > 0) break;
 				const spawn = randomSpawn();
 				player.hp = INITIAL_HP;
-				player.ammo = INITIAL_AMMO;
+				player.ammo = PLAYER_INITIAL_AMMO;
 				player.alive = true;
 				player.x = spawn.x;
 				player.y = spawn.y;
@@ -268,7 +269,8 @@ export class Battlefield extends DurableObject<Env> {
 				} else {
 					const amount = parsePositiveNumber(this.env.BULLET_RECOVER_AMOUNT, DEFAULT_BULLET_RECOVER_AMOUNT);
 					const before = data.ammo;
-					data.ammo = Math.min(INITIAL_AMMO, data.ammo + amount);
+					const maxAmmo = tank.ai ? NPC_INITIAL_AMMO : PLAYER_INITIAL_AMMO;
+					data.ammo = Math.min(maxAmmo, data.ammo + amount);
 					if (tank.ws) this.send(tank.ws, { type: "log", text: `残弾数を${data.ammo - before}回復した（Bullet）` });
 				}
 				return false;
@@ -315,8 +317,14 @@ export class Battlefield extends DurableObject<Env> {
 		}
 		this.projectiles = remaining;
 
-		// Destroyed NPCs leave the field (freeing a slot for the next spawn);
-		// human attachments are persisted.
+		// Destroyed NPCs leave the field (freeing a slot for the next spawn)
+		// and drop a random Armor or Bullet item where they died. Drops are
+		// extra: they ignore the one-per-type limit that governs periodic
+		// spawns. Human attachments are persisted.
+		for (const npc of this.npcs) {
+			if (npc.data.alive) continue;
+			this.items.push({ type: Math.random() < 0.5 ? "armor" : "bullet", x: npc.data.x, y: npc.data.y });
+		}
 		this.npcs = this.npcs.filter((npc) => npc.data.alive);
 		for (const human of humans) human.ws?.serializeAttachment(human.data);
 
@@ -408,7 +416,7 @@ export class Battlefield extends DurableObject<Env> {
 				dirY: 0,
 				facing: Math.floor(Math.random() * 8) * FACING_STEP,
 				hp: INITIAL_HP,
-				ammo: INITIAL_AMMO,
+				ammo: NPC_INITIAL_AMMO,
 				score: 0,
 				alive: true,
 				joinedAt: now,

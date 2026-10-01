@@ -16,7 +16,9 @@ export const MOVE_SPEED_PX_PER_SEC = UNIT_PX * 2;
 export const PROJECTILE_SPEED_PX_PER_SEC = 300;
 
 export const INITIAL_HP = 10;
-export const INITIAL_AMMO = 10;
+// Starting ammo (also the cap for Bullet pickups) differs between users and NPCs.
+export const PLAYER_INITIAL_AMMO = 100;
+export const NPC_INITIAL_AMMO = 10;
 
 export const TICK_MS = 50;
 
