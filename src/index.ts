@@ -39,6 +39,7 @@ import {
 	randomSpawn,
 	type ClientMessage,
 	type FieldItem,
+	type GameEvent,
 	type ItemType,
 	type NpcAi,
 	type PlayerAttachment,
@@ -317,6 +318,7 @@ export class Battlefield extends DurableObject<Env> {
 
 		// Collision detection: projectile vs. other tanks (humans and NPCs).
 		const remaining: Projectile[] = [];
+		const events: GameEvent[] = [];
 		for (const projectile of this.projectiles) {
 			let hit = false;
 			for (const tank of tanks) {
@@ -328,9 +330,13 @@ export class Battlefield extends DurableObject<Env> {
 				const distance = Math.sqrt(dx * dx + dy * dy);
 				if (distance > TANK_RADIUS + projectile.radius) continue;
 
+				const hpBefore = target.hp;
 				target.hp = Math.max(0, target.hp - projectile.damage);
 				const destroyed = target.hp <= 0;
 				if (destroyed) target.alive = false;
+
+				events.push({ type: "hit", id: target.id, x: projectile.x, y: projectile.y, damage: hpBefore - target.hp });
+				if (destroyed) events.push({ type: "destroyed", id: target.id, x: target.x, y: target.y, color: target.color });
 
 				this.sendLogToTank(tanks, projectile.ownerId, `${target.name} に命中させた！${destroyed ? "（撃破）" : ""}`);
 				this.sendLogToTank(tanks, target.id, `${this.findTankName(tanks, projectile.ownerId)} の弾が命中した${destroyed ? "（被撃破）" : ""}`);
@@ -398,6 +404,7 @@ export class Battlefield extends DurableObject<Env> {
 			players,
 			projectiles: this.projectiles.map((p) => ({ x: p.x, y: p.y, color: p.ownerColor, radius: p.radius })),
 			items: this.items,
+			events,
 		};
 		for (const human of humans) if (human.ws) this.send(human.ws, state);
 

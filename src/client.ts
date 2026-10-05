@@ -180,6 +180,111 @@ export const CLIENT_HTML = `<!DOCTYPE html>
   let latestState = { players: [], projectiles: [], items: [] };
   const pressed = new Set();
 
+  // Visual effects (hit sparks, explosions, ...). Times are performance.now() ms.
+  const effects = [];
+  const flashUntil = {}; // tank id -> when its hit flash ends
+  let selfHitFlashUntil = 0;
+
+  function rand(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function addParticles(x, y, count, speedMin, speedMax, lifeMin, lifeMax, sizeMin, sizeMax, colors, now) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = rand(speedMin, speedMax);
+      effects.push({
+        kind: "particle",
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: rand(sizeMin, sizeMax),
+        color: colors[i % colors.length],
+        born: now,
+        life: rand(lifeMin, lifeMax),
+      });
+    }
+  }
+
+  // A tank was hit: flash/shake it, throw sparks from the impact point and
+  // float the damage taken above it. Being hit yourself also tints the screen.
+  function playHit(ev, now) {
+    flashUntil[ev.id] = now + 220;
+    addParticles(ev.x, ev.y, 9, 50, 150, 220, 400, 1.5, 3, ["#ffffff", "#fff59d", "#ffcc80"], now);
+    effects.push({ kind: "ring", x: ev.x, y: ev.y, r0: 3, r1: 20, width: 2, rgb: "255,255,255", born: now, life: 260 });
+    effects.push({
+      kind: "text", x: ev.x, y: ev.y - TANK_RADIUS, text: "-" + ev.damage,
+      size: 12 + Math.min(ev.damage, 5) * 2, rgb: "255,90,90", born: now, life: 750,
+    });
+    if (ev.id === selfId) selfHitFlashUntil = now + 300;
+  }
+
+  // A tank was destroyed: a flash, expanding shockwaves and a burst of fire
+  // and debris in the tank's own colour.
+  function playDestroyed(ev, now) {
+    effects.push({ kind: "flash", x: ev.x, y: ev.y, r: 34, born: now, life: 200 });
+    effects.push({ kind: "ring", x: ev.x, y: ev.y, r0: 6, r1: 62, width: 5, rgb: "255,150,50", born: now, life: 650 });
+    effects.push({ kind: "ring", x: ev.x, y: ev.y, r0: 2, r1: 38, width: 2, rgb: "255,255,255", born: now, life: 450 });
+    addParticles(ev.x, ev.y, 26, 40, 210, 450, 900, 2, 5.5, ["#ff5722", "#ff9800", "#ffeb3b", ev.color], now);
+    addParticles(ev.x, ev.y, 10, 20, 90, 700, 1100, 2, 4, ["#555555", "#888888"], now);
+    effects.push({
+      kind: "text", x: ev.x, y: ev.y - TANK_RADIUS - 8, text: "撃破!",
+      size: 18, rgb: "255,190,70", born: now, life: 1000,
+    });
+  }
+
+  function playEvent(ev) {
+    const now = performance.now();
+    if (ev.type === "hit") playHit(ev, now);
+    else if (ev.type === "destroyed") playDestroyed(ev, now);
+  }
+
+  function drawEffects(now) {
+    for (let i = effects.length - 1; i >= 0; i--) {
+      const e = effects[i];
+      const age = now - e.born;
+      const t = age / e.life;
+      if (t >= 1) {
+        effects.splice(i, 1);
+        continue;
+      }
+      ctx2d.save();
+      if (e.kind === "particle") {
+        ctx2d.globalAlpha = 1 - t;
+        ctx2d.fillStyle = e.color;
+        const size = e.size * (1 - t * 0.5);
+        ctx2d.beginPath();
+        ctx2d.arc(e.x + (e.vx * age) / 1000, e.y + (e.vy * age) / 1000, size, 0, Math.PI * 2);
+        ctx2d.fill();
+      } else if (e.kind === "ring") {
+        ctx2d.strokeStyle = "rgba(" + e.rgb + "," + (1 - t) + ")";
+        ctx2d.lineWidth = e.width * (1 - t * 0.6);
+        ctx2d.beginPath();
+        ctx2d.arc(e.x, e.y, e.r0 + (e.r1 - e.r0) * t, 0, Math.PI * 2);
+        ctx2d.stroke();
+      } else if (e.kind === "flash") {
+        const g = ctx2d.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.r * (0.6 + t * 0.6));
+        g.addColorStop(0, "rgba(255,255,255," + 0.95 * (1 - t) + ")");
+        g.addColorStop(1, "rgba(255,200,80,0)");
+        ctx2d.fillStyle = g;
+        ctx2d.beginPath();
+        ctx2d.arc(e.x, e.y, e.r * 1.2, 0, Math.PI * 2);
+        ctx2d.fill();
+      } else if (e.kind === "text") {
+        ctx2d.globalAlpha = Math.min(1, (1 - t) * 1.6);
+        ctx2d.font = "bold " + e.size + "px sans-serif";
+        ctx2d.textAlign = "center";
+        ctx2d.lineWidth = 3;
+        ctx2d.strokeStyle = "rgba(0,0,0,0.7)";
+        ctx2d.fillStyle = "rgb(" + e.rgb + ")";
+        const y = e.y - 26 * t;
+        ctx2d.strokeText(e.text, e.x, y);
+        ctx2d.fillText(e.text, e.x, y);
+      }
+      ctx2d.restore();
+    }
+  }
+
   function connect(name) {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(proto + "//" + location.host + "/ws?name=" + encodeURIComponent(name));
@@ -188,6 +293,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       loginScreen.style.display = "none";
       gameScreen.style.display = "flex";
       logList.innerHTML = "";
+      effects.length = 0;
     });
 
     ws.addEventListener("message", (event) => {
@@ -196,7 +302,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
         selfId = msg.id;
       } else if (msg.type === "state") {
         latestState = msg;
-        render();
+        for (const ev of msg.events || []) playEvent(ev);
       } else if (msg.type === "log") {
         appendLog(msg.text);
       }
@@ -344,9 +450,15 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       ctx2d.fill();
     }
 
+    const now = performance.now();
     for (const player of latestState.players) {
+      // A freshly hit tank shakes and flashes white.
+      const flashLeft = (flashUntil[player.id] || 0) - now;
+      if (flashLeft <= 0) delete flashUntil[player.id];
+      const shake = flashLeft > 0 ? 2 : 0;
+
       ctx2d.save();
-      ctx2d.translate(player.x, player.y);
+      ctx2d.translate(player.x + rand(-shake, shake), player.y + rand(-shake, shake));
       ctx2d.rotate(player.facing + Math.PI / 2);
       ctx2d.globalAlpha = player.alive ? 1 : 0.3;
       ctx2d.beginPath();
@@ -356,6 +468,10 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       ctx2d.closePath();
       ctx2d.fillStyle = player.color;
       ctx2d.fill();
+      if (flashLeft > 0) {
+        ctx2d.fillStyle = "rgba(255, 255, 255, " + Math.min(1, flashLeft / 160) * 0.85 + ")";
+        ctx2d.fill();
+      }
       if (player.id === selfId) {
         ctx2d.lineWidth = 2;
         ctx2d.strokeStyle = "#fff";
@@ -384,7 +500,23 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       ctx2d.textAlign = "center";
       ctx2d.fillText(player.level > 0 ? player.name + " Lv" + player.level : player.name, player.x, player.y - TANK_RADIUS - 6);
     }
+
+    drawEffects(now);
+
+    // Taking a hit yourself briefly tints the whole field red.
+    const selfFlashLeft = selfHitFlashUntil - now;
+    if (selfFlashLeft > 0) {
+      ctx2d.fillStyle = "rgba(255, 40, 40, " + (selfFlashLeft / 300) * 0.28 + ")";
+      ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+    }
   }
+
+  // Redraw every frame (not just on state updates) so effects animate smoothly.
+  function frame() {
+    render();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
 })();
 </script>
 </body>

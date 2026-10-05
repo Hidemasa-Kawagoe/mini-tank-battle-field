@@ -159,9 +159,20 @@ export interface FieldItem {
 	y: number;
 }
 
+/** One-off things that happened this tick, for the client to play effects. */
+export type GameEvent =
+	| { type: "hit"; id: string; x: number; y: number; damage: number } // x,y = impact point
+	| { type: "destroyed"; id: string; x: number; y: number; color: string };
+
 export type ServerMessage =
 	| { type: "welcome"; id: string; color: string }
-	| { type: "state"; players: StatePlayer[]; projectiles: StateProjectile[]; items: FieldItem[] }
+	| {
+			type: "state";
+			players: StatePlayer[];
+			projectiles: StateProjectile[];
+			items: FieldItem[];
+			events: GameEvent[];
+	  }
 	| { type: "log"; text: string };
 
 export type ClientMessage =
