@@ -142,6 +142,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       <div class="stat"><span class="label">残弾数</span><span class="value" id="stat-ammo">-</span></div>
       <div class="stat"><span class="label">撃破数</span><span class="value" id="stat-score">-</span></div>
       <div class="stat"><span class="label">レベル</span><span class="value" id="stat-level">-</span></div>
+      <div class="stat"><span class="label">シールド</span><span class="value" id="stat-shield" style="font-size:14px">-</span></div>
     </div>
     <div id="field-wrap">
       <canvas id="field" width="800" height="600"></canvas>
@@ -158,6 +159,10 @@ export const CLIENT_HTML = `<!DOCTYPE html>
   const TANK_RADIUS = 14;
   const ITEM_RADIUS = 10;
   const CHARGE_MAX_SHOTS = 5;
+  const SHIELD_GAP = 4;
+  const SHIELD_THICKNESS = 4;
+  const SIDE_SHIELD_HP = 1;
+  const REAR_SHIELD_HP = 5;
 
   const loginScreen = document.getElementById("login-screen");
   const gameScreen = document.getElementById("game-screen");
@@ -171,6 +176,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
   const statAmmo = document.getElementById("stat-ammo");
   const statScore = document.getElementById("stat-score");
   const statLevel = document.getElementById("stat-level");
+  const statShield = document.getElementById("stat-shield");
   const logList = document.getElementById("log-list");
   const canvas = document.getElementById("field");
   const ctx2d = canvas.getContext("2d");
@@ -183,6 +189,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
   // Visual effects (hit sparks, explosions, ...). Times are performance.now() ms.
   const effects = [];
   const flashUntil = {}; // tank id -> when its hit flash ends
+  const shieldFlashUntil = {}; // tank id -> when its shield hit flash ends
   let selfHitFlashUntil = 0;
 
   function rand(min, max) {
@@ -233,9 +240,25 @@ export const CLIENT_HTML = `<!DOCTYPE html>
     });
   }
 
+  // A shield absorbed a shot: the shield flashes and throws cyan sparks; if
+  // that finished it off, it shatters.
+  function playShieldHit(ev, now) {
+    shieldFlashUntil[ev.id] = now + 200;
+    addParticles(ev.x, ev.y, 8, 40, 130, 220, 380, 1.5, 3, ["#4fc3f7", "#b3e5fc", "#ffffff"], now);
+    effects.push({ kind: "ring", x: ev.x, y: ev.y, r0: 3, r1: 18, width: 2, rgb: "79,195,247", born: now, life: 260 });
+    if (ev.broken) {
+      addParticles(ev.x, ev.y, 14, 40, 160, 400, 750, 1.5, 3.5, ["#4fc3f7", "#e1f5fe"], now);
+      effects.push({
+        kind: "text", x: ev.x, y: ev.y - TANK_RADIUS, text: "シールド破壊",
+        size: 12, rgb: "130,210,255", born: now, life: 800,
+      });
+    }
+  }
+
   function playEvent(ev) {
     const now = performance.now();
     if (ev.type === "hit") playHit(ev, now);
+    else if (ev.type === "shieldHit") playShieldHit(ev, now);
     else if (ev.type === "destroyed") playDestroyed(ev, now);
   }
 
@@ -417,6 +440,11 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       statAmmo.textContent = self.ammo;
       statScore.textContent = self.score;
       statLevel.textContent = self.level;
+      const shields = [];
+      if (self.shieldLeft > 0) shields.push("左" + self.shieldLeft);
+      if (self.shieldRight > 0) shields.push("右" + self.shieldRight);
+      if (self.shieldRear > 0) shields.push("後" + self.shieldRear);
+      statShield.textContent = shields.length ? shields.join(" ") : "なし";
       respawnButton.disabled = self.hp > 0;
     }
 
@@ -477,6 +505,26 @@ export const CLIENT_HTML = `<!DOCTYPE html>
         ctx2d.strokeStyle = "#fff";
         ctx2d.stroke();
       }
+
+      // Shields, in the tank's frame (forward is -y): side ones run its full
+      // length just outside each flank, the rear one its full width behind it.
+      const shieldFlash = (shieldFlashUntil[player.id] || 0) > now;
+      if (!shieldFlash) delete shieldFlashUntil[player.id];
+      const sideX = TANK_RADIUS * 0.8 + SHIELD_GAP;
+      const rearY = TANK_RADIUS * 0.8 + SHIELD_GAP;
+      ctx2d.lineWidth = SHIELD_THICKNESS;
+      ctx2d.lineCap = "butt";
+      const drawShield = (x1, y1, x2, y2, hp, maxHp) => {
+        if (hp <= 0) return;
+        ctx2d.strokeStyle = shieldFlash ? "#ffffff" : "rgba(79, 195, 247, " + (0.45 + 0.55 * (hp / maxHp)) + ")";
+        ctx2d.beginPath();
+        ctx2d.moveTo(x1, y1);
+        ctx2d.lineTo(x2, y2);
+        ctx2d.stroke();
+      };
+      drawShield(-sideX, -TANK_RADIUS, -sideX, TANK_RADIUS * 0.8, player.shieldLeft, SIDE_SHIELD_HP);
+      drawShield(sideX, -TANK_RADIUS, sideX, TANK_RADIUS * 0.8, player.shieldRight, SIDE_SHIELD_HP);
+      drawShield(-TANK_RADIUS * 0.8, rearY, TANK_RADIUS * 0.8, rearY, player.shieldRear, REAR_SHIELD_HP);
       ctx2d.restore();
 
       // Charge gauge: a pie inside the tank, full at CHARGE_MAX_SHOTS.

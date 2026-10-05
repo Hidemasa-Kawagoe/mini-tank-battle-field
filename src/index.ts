@@ -28,6 +28,11 @@ import {
 	PLAYER_INITIAL_AMMO,
 	PLAYER_INITIAL_HP,
 	PROJECTILE_SPEED_PX_PER_SEC,
+	REAR_SHIELD_HP,
+	REAR_SHIELD_LEVEL,
+	SHIELD_THICKNESS,
+	SIDE_SHIELD_HP,
+	SIDE_SHIELD_LEVEL,
 	TANK_RADIUS,
 	TICK_MS,
 	parseIdleTimeoutMs,
@@ -37,6 +42,9 @@ import {
 	projectileRadiusForLevel,
 	randomColor,
 	randomSpawn,
+	segmentDistance,
+	shieldSegments,
+	type ShieldSide,
 	type ClientMessage,
 	type FieldItem,
 	type GameEvent,
@@ -116,6 +124,9 @@ export class Battlefield extends DurableObject<Env> {
 			level: 0,
 			alive: true,
 			chargeStartAt: null,
+			shieldLeft: 0,
+			shieldRight: 0,
+			shieldRear: 0,
 			joinedAt: Date.now(),
 			lastActivityAt: Date.now(),
 			idleKicked: false,
@@ -197,6 +208,9 @@ export class Battlefield extends DurableObject<Env> {
 				player.alive = true;
 				player.level = 0;
 				player.chargeStartAt = null;
+				player.shieldLeft = 0;
+				player.shieldRight = 0;
+				player.shieldRear = 0;
 				player.x = spawn.x;
 				player.y = spawn.y;
 				player.dirX = 0;
@@ -311,6 +325,8 @@ export class Battlefield extends DurableObject<Env> {
 
 		// Move projectiles and drop ones that left the field.
 		this.projectiles = this.projectiles.filter((p) => {
+			p.prevX = p.x;
+			p.prevY = p.y;
 			p.x += p.vx * dt;
 			p.y += p.vy * dt;
 			return p.x >= 0 && p.x <= FIELD_WIDTH && p.y >= 0 && p.y <= FIELD_HEIGHT;
@@ -324,6 +340,20 @@ export class Battlefield extends DurableObject<Env> {
 			for (const tank of tanks) {
 				const target = tank.data;
 				if (!target.alive || target.id === projectile.ownerId) continue;
+
+				// Shields sit outside the body, so they get first crack at it:
+				// the projectile is absorbed and the body is untouched.
+				const shield = this.findShieldHit(target, projectile);
+				if (shield) {
+					const key = shield === "left" ? "shieldLeft" : shield === "right" ? "shieldRight" : "shieldRear";
+					target[key] = Math.max(0, target[key] - projectile.damage);
+					const broken = target[key] <= 0;
+					events.push({ type: "shieldHit", id: target.id, x: projectile.x, y: projectile.y, broken });
+					this.sendLogToTank(tanks, projectile.ownerId, `${target.name} のシールドに命中させた${broken ? "（シールド破壊）" : ""}`);
+					this.sendLogToTank(tanks, target.id, `シールドが${this.findTankName(tanks, projectile.ownerId)} の弾を防いだ${broken ? "（シールド破壊）" : ""}`);
+					hit = true;
+					break;
+				}
 
 				const dx = target.x - projectile.x;
 				const dy = target.y - projectile.y;
@@ -360,7 +390,8 @@ export class Battlefield extends DurableObject<Env> {
 						shooter.data.score += 1;
 						if (shooter.data.level < MAX_LEVEL) {
 							shooter.data.level += 1;
-							this.sendLogToTank(tanks, shooter.data.id, `レベルアップ！ Lv${shooter.data.level}`);
+							const equipped = this.equipShields(shooter.data);
+							this.sendLogToTank(tanks, shooter.data.id, `レベルアップ！ Lv${shooter.data.level}${equipped}`);
 						}
 					}
 				}
@@ -386,6 +417,9 @@ export class Battlefield extends DurableObject<Env> {
 		// Broadcast the authoritative snapshot to every human.
 		const players: StatePlayer[] = [...humans, ...this.npcs].map(({ data: p }) => ({
 			charge: this.chargeUnits(p, now),
+			shieldLeft: p.shieldLeft,
+			shieldRight: p.shieldRight,
+			shieldRear: p.shieldRear,
 			id: p.id,
 			name: p.name,
 			color: p.color,
@@ -479,6 +513,9 @@ export class Battlefield extends DurableObject<Env> {
 				level: 0,
 				alive: true,
 				chargeStartAt: null,
+				shieldLeft: 0,
+				shieldRight: 0,
+				shieldRear: 0,
 				joinedAt: now,
 				lastActivityAt: now,
 				idleKicked: false,
@@ -612,6 +649,48 @@ export class Battlefield extends DurableObject<Env> {
 		return Math.min(CHARGE_MAX_SHOTS, data.ammo, (now - data.chargeStartAt) / CHARGE_INTERVAL_MS);
 	}
 
+	// Which of the target's shields (if any) the projectile's path this tick
+	// ran into. The path is swept as a segment, since a projectile covers more
+	// ground per tick than a shield is thick. If it clips more than one, the
+	// nearest wins.
+	private findShieldHit(target: PlayerAttachment, projectile: Projectile): ShieldSide | null {
+		const path = { x1: projectile.prevX, y1: projectile.prevY, x2: projectile.x, y2: projectile.y };
+		const reach = projectile.radius + SHIELD_THICKNESS / 2;
+		const segments = shieldSegments(target.x, target.y, target.facing);
+		const equipped: [ShieldSide, number][] = [
+			["left", target.shieldLeft],
+			["right", target.shieldRight],
+			["rear", target.shieldRear],
+		];
+
+		let best: ShieldSide | null = null;
+		let bestDistance = reach;
+		for (const [side, hp] of equipped) {
+			if (hp <= 0) continue;
+			const d = segmentDistance(path, segments[side]);
+			if (d <= bestDistance) {
+				best = side;
+				bestDistance = d;
+			}
+		}
+		return best;
+	}
+
+	// Reaching level 3 fits fresh side shields, level 4 a fresh rear one.
+	// Returns a log suffix describing what was equipped.
+	private equipShields(data: PlayerAttachment): string {
+		if (data.level === SIDE_SHIELD_LEVEL) {
+			data.shieldLeft = SIDE_SHIELD_HP;
+			data.shieldRight = SIDE_SHIELD_HP;
+			return "（左右シールド装備）";
+		}
+		if (data.level === REAR_SHIELD_LEVEL) {
+			data.shieldRear = REAR_SHIELD_HP;
+			return "（後方シールド装備）";
+		}
+		return "";
+	}
+
 	// A charged shot is one projectile that spends `shots` rounds and deals
 	// `shots` times the usual damage.
 	private fireProjectile(shooter: PlayerAttachment, shots = 1): void {
@@ -624,6 +703,8 @@ export class Battlefield extends DurableObject<Env> {
 			ownerColor: shooter.color,
 			x: shooter.x + dirX * (TANK_RADIUS + radius + 2),
 			y: shooter.y + dirY * (TANK_RADIUS + radius + 2),
+			prevX: shooter.x + dirX * (TANK_RADIUS + radius + 2),
+			prevY: shooter.y + dirY * (TANK_RADIUS + radius + 2),
 			vx: dirX * PROJECTILE_SPEED_PX_PER_SEC,
 			vy: dirY * PROJECTILE_SPEED_PX_PER_SEC,
 			radius,
