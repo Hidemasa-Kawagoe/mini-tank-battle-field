@@ -1,6 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import { CLIENT_HTML } from "./client";
 import {
+	CHARGE_INTERVAL_MS,
+	CHARGE_MAX_SHOTS,
 	DEFAULT_ARMOR_RECOVER_AMOUNT,
 	DEFAULT_BULLET_RECOVER_AMOUNT,
 	DEFAULT_ITEM_SPAWN_INTERVAL_SECONDS,
@@ -112,6 +114,7 @@ export class Battlefield extends DurableObject<Env> {
 			score: 0,
 			level: 0,
 			alive: true,
+			chargeStartAt: null,
 			joinedAt: Date.now(),
 			lastActivityAt: Date.now(),
 			idleKicked: false,
@@ -159,9 +162,29 @@ export class Battlefield extends DurableObject<Env> {
 				ws.serializeAttachment(player);
 				break;
 			}
+			case "charge": {
+				// Pressing fire starts a fresh charge (key-repeat is filtered
+				// client-side, so this only arrives once per press).
+				player.chargeStartAt = player.alive && player.ammo > 0 ? Date.now() : null;
+				ws.serializeAttachment(player);
+				break;
+			}
 			case "fire": {
-				if (!player.alive || player.ammo <= 0) break;
-				this.fireProjectile(player);
+				// Releasing fire shoots whatever was charged. With no charge in
+				// progress (never started, or cancelled by a hit) nothing fires.
+				if (!player.alive || player.ammo <= 0 || player.chargeStartAt === null) {
+					player.chargeStartAt = null;
+					ws.serializeAttachment(player);
+					break;
+				}
+				const shots = Math.max(1, Math.floor(this.chargeUnits(player, Date.now())));
+				player.chargeStartAt = null;
+				this.fireProjectile(player, shots);
+				ws.serializeAttachment(player);
+				break;
+			}
+			case "cancelCharge": {
+				player.chargeStartAt = null;
 				ws.serializeAttachment(player);
 				break;
 			}
@@ -172,6 +195,7 @@ export class Battlefield extends DurableObject<Env> {
 				player.ammo = PLAYER_INITIAL_AMMO;
 				player.alive = true;
 				player.level = 0;
+				player.chargeStartAt = null;
 				player.x = spawn.x;
 				player.y = spawn.y;
 				player.dirX = 0;
@@ -317,6 +341,12 @@ export class Battlefield extends DurableObject<Env> {
 					this.sendLogToTank(tanks, target.id, "被弾によりレベルが0に戻った");
 				}
 
+				// ...and cancels any charge in progress.
+				if (target.chargeStartAt !== null) {
+					target.chargeStartAt = null;
+					this.sendLogToTank(tanks, target.id, "被弾によりチャージがキャンセルされた");
+				}
+
 				// Each kill is +1 score and +1 level (up to the max).
 				if (destroyed) {
 					const shooter = tanks.find((t) => t.data.id === projectile.ownerId);
@@ -349,6 +379,7 @@ export class Battlefield extends DurableObject<Env> {
 
 		// Broadcast the authoritative snapshot to every human.
 		const players: StatePlayer[] = [...humans, ...this.npcs].map(({ data: p }) => ({
+			charge: this.chargeUnits(p, now),
 			id: p.id,
 			name: p.name,
 			color: p.color,
@@ -440,6 +471,7 @@ export class Battlefield extends DurableObject<Env> {
 				score: 0,
 				level: 0,
 				alive: true,
+				chargeStartAt: null,
 				joinedAt: now,
 				lastActivityAt: now,
 				idleKicked: false,
@@ -566,8 +598,17 @@ export class Battlefield extends DurableObject<Env> {
 		return chance;
 	}
 
-	private fireProjectile(shooter: PlayerAttachment): void {
-		shooter.ammo -= 1;
+	// Current charge in shots' worth: one per CHARGE_INTERVAL_MS held, capped
+	// at CHARGE_MAX_SHOTS and at the ammo left (fractional while charging).
+	private chargeUnits(data: PlayerAttachment, now: number): number {
+		if (data.chargeStartAt === null) return 0;
+		return Math.min(CHARGE_MAX_SHOTS, data.ammo, (now - data.chargeStartAt) / CHARGE_INTERVAL_MS);
+	}
+
+	// A charged shot is one projectile that spends `shots` rounds and deals
+	// `shots` times the usual damage.
+	private fireProjectile(shooter: PlayerAttachment, shots = 1): void {
+		shooter.ammo -= shots;
 		const dirX = Math.cos(shooter.facing);
 		const dirY = Math.sin(shooter.facing);
 		const radius = projectileRadiusForLevel(shooter.level);
@@ -579,7 +620,7 @@ export class Battlefield extends DurableObject<Env> {
 			vx: dirX * PROJECTILE_SPEED_PX_PER_SEC,
 			vy: dirY * PROJECTILE_SPEED_PX_PER_SEC,
 			radius,
-			damage: projectileDamageForLevel(shooter.level),
+			damage: projectileDamageForLevel(shooter.level) * shots,
 		});
 	}
 

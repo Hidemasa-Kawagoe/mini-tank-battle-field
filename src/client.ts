@@ -157,6 +157,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
 (function () {
   const TANK_RADIUS = 14;
   const ITEM_RADIUS = 10;
+  const CHARGE_MAX_SHOTS = 5;
 
   const loginScreen = document.getElementById("login-screen");
   const gameScreen = document.getElementById("game-screen");
@@ -250,6 +251,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
 
   const keyDir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
   let lastDir = { x: 0, y: 0 };
+  let charging = false;
 
   // face is true only when this update was triggered by pressing a new
   // direction key. A key release still updates movement (dir), but must not
@@ -275,8 +277,12 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       pressed.add(e.key);
       updateInput(true);
       e.preventDefault();
-    } else if (e.key === " " && !e.repeat) {
-      send({ type: "fire" });
+    } else if (e.key === " ") {
+      // Holding fire charges the shot; it's released (fired) on keyup.
+      if (!e.repeat) {
+        charging = true;
+        send({ type: "charge" });
+      }
       e.preventDefault();
     }
   });
@@ -284,6 +290,16 @@ export const CLIENT_HTML = `<!DOCTYPE html>
     if (keyDir[e.key]) {
       pressed.delete(e.key);
       updateInput(false);
+    } else if (e.key === " " && charging) {
+      charging = false;
+      send({ type: "fire" });
+    }
+  });
+  // Losing focus mid-charge would swallow the keyup, so drop the charge.
+  window.addEventListener("blur", () => {
+    if (charging) {
+      charging = false;
+      send({ type: "cancelCharge" });
     }
   });
 
@@ -346,6 +362,21 @@ export const CLIENT_HTML = `<!DOCTYPE html>
         ctx2d.stroke();
       }
       ctx2d.restore();
+
+      // Charge gauge: a pie inside the tank, full at CHARGE_MAX_SHOTS.
+      if (player.charge > 0) {
+        const frac = Math.min(1, player.charge / CHARGE_MAX_SHOTS);
+        ctx2d.beginPath();
+        ctx2d.arc(player.x, player.y, 7, 0, Math.PI * 2);
+        ctx2d.fillStyle = "rgba(0, 0, 0, 0.55)";
+        ctx2d.fill();
+        ctx2d.beginPath();
+        ctx2d.moveTo(player.x, player.y);
+        ctx2d.arc(player.x, player.y, 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+        ctx2d.closePath();
+        ctx2d.fillStyle = "#fff";
+        ctx2d.fill();
+      }
 
       ctx2d.globalAlpha = 1;
       ctx2d.fillStyle = "#ddd";

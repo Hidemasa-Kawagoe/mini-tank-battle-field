@@ -39,6 +39,12 @@ export const NPC_INITIAL_AMMO = 10;
 
 export const TICK_MS = 50;
 
+// Holding fire charges one shot's worth every CHARGE_INTERVAL_MS, up to
+// CHARGE_MAX_SHOTS (and never more than the ammo left). Releasing fires a
+// single projectile that spends that many rounds and hits that much harder.
+export const CHARGE_INTERVAL_MS = 500;
+export const CHARGE_MAX_SHOTS = 5;
+
 export const ITEM_RADIUS = 10;
 
 // Defaults for the environment variables (wrangler.jsonc "vars"), used
@@ -96,6 +102,8 @@ export interface PlayerAttachment {
 	score: number;
 	level: number;
 	alive: boolean;
+	// When the fire key was pressed, while it's held; null when not charging.
+	chargeStartAt: number | null;
 	joinedAt: number;
 	lastActivityAt: number;
 	idleKicked: boolean;
@@ -131,6 +139,8 @@ export interface StatePlayer {
 	ammo: number;
 	score: number;
 	level: number;
+	// Current charge in shots' worth (0..CHARGE_MAX_SHOTS, fractional).
+	charge: number;
 	alive: boolean;
 }
 
@@ -156,7 +166,9 @@ export type ServerMessage =
 
 export type ClientMessage =
 	| { type: "input"; dir: { x: -1 | 0 | 1; y: -1 | 0 | 1 }; face: boolean }
-	| { type: "fire" }
+	| { type: "charge" } // fire key pressed: start charging
+	| { type: "fire" } // fire key released: fire what's been charged
+	| { type: "cancelCharge" } // e.g. the window lost focus mid-charge
 	| { type: "respawn" };
 
 export function randomColor(): string {
