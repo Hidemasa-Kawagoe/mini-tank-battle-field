@@ -150,7 +150,6 @@ export const DEFAULT_NPC_MAX_COUNT = 5;
 export const DEFAULT_NPC_SPAWN_INTERVAL_SECONDS = 3;
 
 // NPC tank behavior tuning.
-export const NPC_COLOR = "#9e9e9e";
 export const NPC_THINK_MIN_MS = 500;
 export const NPC_THINK_MAX_MS = 1500;
 export const NPC_MOVE_TIMEOUT_MS = 30_000;
@@ -166,25 +165,10 @@ export const NPC_FIRE_CHANCE_NEAR_LINE = 0.2;
 // "around" it (a tank within the shooter's projectile hit width is "on" it).
 export const NPC_NEAR_LINE_WIDTH_PX = 60;
 
-export const PLAYER_COLORS = [
-	"#e6194b",
-	"#3cb44b",
-	"#4363d8",
-	"#f58231",
-	"#911eb4",
-	"#46f0f0",
-	"#f032e6",
-	"#bcf60c",
-	"#fabebe",
-	"#008080",
-	"#e6beff",
-	"#9a6324",
-];
-
 export interface PlayerAttachment {
 	id: string;
 	name: string;
-	color: string;
+	npc: boolean;
 	x: number;
 	y: number;
 	dirX: number;
@@ -215,7 +199,7 @@ export interface NpcAi {
 
 export interface Projectile {
 	ownerId: string;
-	ownerColor: string;
+	ownerIsNpc: boolean;
 	x: number;
 	y: number;
 	// Where it was last tick, so collisions can sweep the path it travelled.
@@ -231,7 +215,7 @@ export interface Projectile {
 export interface StatePlayer {
 	id: string;
 	name: string;
-	color: string;
+	npc: boolean;
 	x: number;
 	y: number;
 	facing: number;
@@ -250,7 +234,8 @@ export interface StatePlayer {
 export interface StateProjectile {
 	x: number;
 	y: number;
-	color: string;
+	ownerId: string;
+	ownerIsNpc: boolean;
 	radius: number;
 }
 
@@ -266,10 +251,10 @@ export interface FieldItem {
 export type GameEvent =
 	| { type: "hit"; id: string; x: number; y: number; damage: number } // x,y = impact point
 	| { type: "shieldHit"; id: string; x: number; y: number; broken: boolean }
-	| { type: "destroyed"; id: string; x: number; y: number; color: string };
+	| { type: "destroyed"; id: string; x: number; y: number; npc: boolean };
 
 export type ServerMessage =
-	| { type: "welcome"; id: string; color: string }
+	| { type: "welcome"; id: string }
 	| {
 			type: "state";
 			players: StatePlayer[];
@@ -285,10 +270,6 @@ export type ClientMessage =
 	| { type: "fire" } // fire key released: fire what's been charged
 	| { type: "cancelCharge" } // e.g. the window lost focus mid-charge
 	| { type: "respawn" };
-
-export function randomColor(): string {
-	return PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
-}
 
 export function randomSpawn(): { x: number; y: number } {
 	return {

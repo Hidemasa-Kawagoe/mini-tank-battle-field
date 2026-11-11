@@ -14,7 +14,6 @@ import {
 	MAX_LEVEL,
 	MOVE_SPEED_PX_PER_SEC,
 	NPC_ARRIVE_TOLERANCE_PX,
-	NPC_COLOR,
 	NPC_FIRE_CHANCE_NEAR_LINE,
 	NPC_FIRE_CHANCE_ON_LINE,
 	NPC_INITIAL_AMMO,
@@ -40,7 +39,6 @@ import {
 	parsePositiveNumber,
 	projectileDamageForLevel,
 	projectileRadiusForLevel,
-	randomColor,
 	randomSpawn,
 	segmentDistance,
 	shieldSegments,
@@ -112,7 +110,7 @@ export class Battlefield extends DurableObject<Env> {
 		const player: PlayerAttachment = {
 			id: crypto.randomUUID(),
 			name,
-			color: randomColor(),
+			npc: false,
 			x: spawn.x,
 			y: spawn.y,
 			dirX: 0,
@@ -133,7 +131,7 @@ export class Battlefield extends DurableObject<Env> {
 		};
 		server.serializeAttachment(player);
 
-		this.send(server, { type: "welcome", id: player.id, color: player.color });
+		this.send(server, { type: "welcome", id: player.id });
 		this.broadcastLog(`${player.name} が入場しました`);
 		await this.ensureTicking();
 
@@ -366,7 +364,7 @@ export class Battlefield extends DurableObject<Env> {
 				if (destroyed) target.alive = false;
 
 				events.push({ type: "hit", id: target.id, x: projectile.x, y: projectile.y, damage: hpBefore - target.hp });
-				if (destroyed) events.push({ type: "destroyed", id: target.id, x: target.x, y: target.y, color: target.color });
+				if (destroyed) events.push({ type: "destroyed", id: target.id, x: target.x, y: target.y, npc: target.npc });
 
 				this.sendLogToTank(tanks, projectile.ownerId, `${target.name} に命中させた！${destroyed ? "（撃破）" : ""}`);
 				this.sendLogToTank(tanks, target.id, `${this.findTankName(tanks, projectile.ownerId)} の弾が命中した${destroyed ? "（被撃破）" : ""}`);
@@ -422,7 +420,7 @@ export class Battlefield extends DurableObject<Env> {
 			shieldRear: p.shieldRear,
 			id: p.id,
 			name: p.name,
-			color: p.color,
+			npc: p.npc,
 			x: p.x,
 			y: p.y,
 			facing: p.facing,
@@ -436,7 +434,7 @@ export class Battlefield extends DurableObject<Env> {
 		const state: ServerMessage = {
 			type: "state",
 			players,
-			projectiles: this.projectiles.map((p) => ({ x: p.x, y: p.y, color: p.ownerColor, radius: p.radius })),
+			projectiles: this.projectiles.map((p) => ({ x: p.x, y: p.y, ownerId: p.ownerId, ownerIsNpc: p.ownerIsNpc, radius: p.radius })),
 			items: this.items,
 			events,
 		};
@@ -501,7 +499,7 @@ export class Battlefield extends DurableObject<Env> {
 			data: {
 				id: `npc-${n}`,
 				name: `NPC-${n}`,
-				color: NPC_COLOR,
+				npc: true,
 				x: spawn.x,
 				y: spawn.y,
 				dirX: 0,
@@ -700,7 +698,7 @@ export class Battlefield extends DurableObject<Env> {
 		const radius = projectileRadiusForLevel(shooter.level);
 		this.projectiles.push({
 			ownerId: shooter.id,
-			ownerColor: shooter.color,
+			ownerIsNpc: shooter.npc,
 			x: shooter.x + dirX * (TANK_RADIUS + radius + 2),
 			y: shooter.y + dirY * (TANK_RADIUS + radius + 2),
 			prevX: shooter.x + dirX * (TANK_RADIUS + radius + 2),

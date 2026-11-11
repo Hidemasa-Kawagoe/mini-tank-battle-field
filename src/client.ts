@@ -159,6 +159,11 @@ export const CLIENT_HTML = `<!DOCTYPE html>
   const TANK_RADIUS = 14;
   const ITEM_RADIUS = 10;
   const CHARGE_MAX_SHOTS = 5;
+  // Colours depend on who's looking: your own tank is always blue and every
+  // other player's is red (NPCs stay grey so they can't be mistaken for players).
+  const SELF_COLOR = "#2f7bff";
+  const OTHER_COLOR = "#e53935";
+  const NPC_COLOR = "#9e9e9e";
   const SHIELD_GAP = 4;
   const SHIELD_THICKNESS = 4;
   const SIDE_SHIELD_HP = 1;
@@ -191,6 +196,10 @@ export const CLIENT_HTML = `<!DOCTYPE html>
   const flashUntil = {}; // tank id -> when its hit flash ends
   const shieldFlashUntil = {}; // tank id -> when its shield hit flash ends
   let selfHitFlashUntil = 0;
+
+  function tankColor(id, npc) {
+    return id === selfId ? SELF_COLOR : npc ? NPC_COLOR : OTHER_COLOR;
+  }
 
   function rand(min, max) {
     return min + Math.random() * (max - min);
@@ -232,7 +241,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
     effects.push({ kind: "flash", x: ev.x, y: ev.y, r: 34, born: now, life: 200 });
     effects.push({ kind: "ring", x: ev.x, y: ev.y, r0: 6, r1: 62, width: 5, rgb: "255,150,50", born: now, life: 650 });
     effects.push({ kind: "ring", x: ev.x, y: ev.y, r0: 2, r1: 38, width: 2, rgb: "255,255,255", born: now, life: 450 });
-    addParticles(ev.x, ev.y, 26, 40, 210, 450, 900, 2, 5.5, ["#ff5722", "#ff9800", "#ffeb3b", ev.color], now);
+    addParticles(ev.x, ev.y, 26, 40, 210, 450, 900, 2, 5.5, ["#ff5722", "#ff9800", "#ffeb3b", tankColor(ev.id, ev.npc)], now);
     addParticles(ev.x, ev.y, 10, 20, 90, 700, 1100, 2, 4, ["#555555", "#888888"], now);
     effects.push({
       kind: "text", x: ev.x, y: ev.y - TANK_RADIUS - 8, text: "撃破!",
@@ -474,7 +483,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
     for (const p of latestState.projectiles) {
       ctx2d.beginPath();
       ctx2d.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-      ctx2d.fillStyle = p.color;
+      ctx2d.fillStyle = tankColor(p.ownerId, p.ownerIsNpc);
       ctx2d.fill();
     }
 
@@ -494,7 +503,7 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       ctx2d.lineTo(TANK_RADIUS * 0.8, TANK_RADIUS * 0.8);
       ctx2d.lineTo(-TANK_RADIUS * 0.8, TANK_RADIUS * 0.8);
       ctx2d.closePath();
-      ctx2d.fillStyle = player.color;
+      ctx2d.fillStyle = tankColor(player.id, player.npc);
       ctx2d.fill();
       if (flashLeft > 0) {
         ctx2d.fillStyle = "rgba(255, 255, 255, " + Math.min(1, flashLeft / 160) * 0.85 + ")";
