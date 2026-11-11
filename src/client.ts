@@ -90,7 +90,17 @@ export const CLIENT_HTML = `<!DOCTYPE html>
     min-width: 0;
     overflow: auto;
   }
-  canvas { background: #1e2230; border: 1px solid #333; }
+  /* The 3D tank canvas sits under the transparent 2D canvas; both are 800x600. */
+  #field-stack {
+    position: relative;
+    box-sizing: content-box;
+    flex: none;
+    width: 800px;
+    height: 600px;
+    background: #1e2230;
+    border: 1px solid #333;
+  }
+  #field-stack canvas { position: absolute; left: 0; top: 0; width: 800px; height: 600px; }
 
   #log-panel {
     width: 260px;
@@ -145,7 +155,10 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       <div class="stat"><span class="label">シールド</span><span class="value" id="stat-shield" style="font-size:14px">-</span></div>
     </div>
     <div id="field-wrap">
-      <canvas id="field" width="800" height="600"></canvas>
+      <div id="field-stack">
+        <canvas id="field3d"></canvas>
+        <canvas id="field" width="800" height="600"></canvas>
+      </div>
     </div>
     <div id="log-panel">
       <h2>イベントログ</h2>
@@ -185,6 +198,21 @@ export const CLIENT_HTML = `<!DOCTYPE html>
   const logList = document.getElementById("log-list");
   const canvas = document.getElementById("field");
   const ctx2d = canvas.getContext("2d");
+
+  // Tanks are drawn in 3D (three.js, loaded as a separate bundle) on a canvas
+  // beneath the 2D one. If it can't load or WebGL is missing, r3d stays null
+  // and the tanks fall back to the flat 2D triangles below.
+  const canvas3d = document.getElementById("field3d");
+  const TANK_3D_DETAIL = 2;
+  let r3d = null;
+  import("/js/renderer3d.js")
+    .then((m) => {
+      r3d = m.createRenderer3D(canvas3d, { detail: TANK_3D_DETAIL });
+    })
+    .catch((err) => {
+      console.warn("3D renderer unavailable, drawing 2D tanks", err);
+      canvas3d.style.display = "none";
+    });
 
   let ws = null;
   let selfId = null;
@@ -488,31 +516,57 @@ export const CLIENT_HTML = `<!DOCTYPE html>
     }
 
     const now = performance.now();
+    const tanks3d = [];
     for (const player of latestState.players) {
       // A freshly hit tank shakes and flashes white.
       const flashLeft = (flashUntil[player.id] || 0) - now;
       if (flashLeft <= 0) delete flashUntil[player.id];
       const shake = flashLeft > 0 ? 2 : 0;
+      const jx = rand(-shake, shake);
+      const jy = rand(-shake, shake);
+
+      tanks3d.push({
+        id: player.id,
+        x: player.x,
+        y: player.y,
+        ox: jx,
+        oy: jy,
+        facing: player.facing,
+        color: tankColor(player.id, player.npc),
+        alive: player.alive,
+        flash: flashLeft > 0 ? Math.min(1, flashLeft / 160) : 0,
+      });
 
       ctx2d.save();
-      ctx2d.translate(player.x + rand(-shake, shake), player.y + rand(-shake, shake));
+      ctx2d.translate(player.x + jx, player.y + jy);
       ctx2d.rotate(player.facing + Math.PI / 2);
       ctx2d.globalAlpha = player.alive ? 1 : 0.3;
-      ctx2d.beginPath();
-      ctx2d.moveTo(0, -TANK_RADIUS);
-      ctx2d.lineTo(TANK_RADIUS * 0.8, TANK_RADIUS * 0.8);
-      ctx2d.lineTo(-TANK_RADIUS * 0.8, TANK_RADIUS * 0.8);
-      ctx2d.closePath();
-      ctx2d.fillStyle = tankColor(player.id, player.npc);
-      ctx2d.fill();
-      if (flashLeft > 0) {
-        ctx2d.fillStyle = "rgba(255, 255, 255, " + Math.min(1, flashLeft / 160) * 0.85 + ")";
+      if (r3d) {
+        // The body is drawn in 3D; just mark your own tank with a ring.
+        if (player.id === selfId) {
+          ctx2d.beginPath();
+          ctx2d.arc(0, 0, TANK_RADIUS + 3, 0, Math.PI * 2);
+          ctx2d.lineWidth = 1.5;
+          ctx2d.strokeStyle = "rgba(255, 255, 255, 0.85)";
+          ctx2d.stroke();
+        }
+      } else {
+        ctx2d.beginPath();
+        ctx2d.moveTo(0, -TANK_RADIUS);
+        ctx2d.lineTo(TANK_RADIUS * 0.8, TANK_RADIUS * 0.8);
+        ctx2d.lineTo(-TANK_RADIUS * 0.8, TANK_RADIUS * 0.8);
+        ctx2d.closePath();
+        ctx2d.fillStyle = tankColor(player.id, player.npc);
         ctx2d.fill();
-      }
-      if (player.id === selfId) {
-        ctx2d.lineWidth = 2;
-        ctx2d.strokeStyle = "#fff";
-        ctx2d.stroke();
+        if (flashLeft > 0) {
+          ctx2d.fillStyle = "rgba(255, 255, 255, " + Math.min(1, flashLeft / 160) * 0.85 + ")";
+          ctx2d.fill();
+        }
+        if (player.id === selfId) {
+          ctx2d.lineWidth = 2;
+          ctx2d.strokeStyle = "#fff";
+          ctx2d.stroke();
+        }
       }
 
       // Shields, in the tank's frame (forward is -y): side ones run its full
@@ -557,6 +611,8 @@ export const CLIENT_HTML = `<!DOCTYPE html>
       ctx2d.textAlign = "center";
       ctx2d.fillText(player.level > 0 ? player.name + " Lv" + player.level : player.name, player.x, player.y - TANK_RADIUS - 6);
     }
+
+    if (r3d) r3d.update(tanks3d);
 
     drawEffects(now);
 

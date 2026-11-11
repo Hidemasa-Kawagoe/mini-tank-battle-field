@@ -37,6 +37,20 @@
 	},
 	"upload_source_maps": true,
 	/**
+	 * Bundles the three.js tank renderer (client3d/) into public/js/ before
+	 * `wrangler dev` / `wrangler deploy`.
+	 */
+	"build": {
+		"command": "npm run build:client3d"
+	},
+	/**
+	 * Static assets (the bundled 3D renderer). Paths that match a file here are
+	 * served directly; everything else (/, /ws) falls through to the Worker.
+	 */
+	"assets": {
+		"directory": "./public"
+	},
+	/**
 	 * Environment Variables
 	 * IDLE_TIMEOUT_SECONDS: seconds of no client message (movement/fire/
 	 * respawn) before a player is automatically logged out.

@@ -6,10 +6,13 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "build:client3d": "rm -rf public/js && esbuild client3d/renderer3d.js --bundle --minify --format=esm --outdir=public/js && esbuild client3d/bench.js client3d/viewer.js --bundle --minify --format=esm --external:/js/renderer3d.js --outdir=public/js"
   },
   "devDependencies": {
     "@types/node": "^22.20.3",
+    "esbuild": "^0.28.2",
+    "three": "^0.187.0",
     "typescript": "^5.5.2",
     "wrangler": "^4.133.0"
   }
